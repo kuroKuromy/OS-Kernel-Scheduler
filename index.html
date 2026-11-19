@@ -1,0 +1,1837 @@
+<!DOCTYPE html>
+<html lang="pt-BR" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simulador de Escalonamento de CPU (SO) | Arquitetura POO</title>
+    <!-- Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Google Fonts: Inter & JetBrains Mono -->
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome para ícones técnicos -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
+    <script>
+        tailwind.config = {
+            darkMode: 'class',
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#151e2e',
+                            900: '#0f172a',
+                            950: '#090d16',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        /* Estilização customizada para scrollbar e animações suaves */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        ::-webkit-scrollbar-track {
+            background: #0f172a;
+        }
+        ::-webkit-scrollbar-thumb {
+            background: #334155;
+            border-radius: 4px;
+        }
+        ::-webkit-scrollbar-thumb:hover {
+            background: #475569;
+        }
+        .gantt-block {
+            transition: all 0.25s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.7; }
+            50% { transform: scale(1.02); opacity: 1; }
+            100% { transform: scale(0.95); opacity: 0.7; }
+        }
+        .cpu-active-pulse {
+            animation: pulse-ring 2s infinite ease-in-out;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 font-sans antialiased min-h-screen flex flex-col selection:bg-cyan-500/30 selection:text-cyan-200">
+
+    <!-- Notificação Toast Customizada (Substitui alert()) -->
+    <div id="toast-container" class="fixed bottom-5 right-5 z-50 flex flex-col gap-2 pointer-events-none"></div>
+
+    <!-- Cabeçalho Superior -->
+    <header class="bg-slate-900/90 backdrop-blur-md border-b border-slate-800 sticky top-0 z-40">
+        <div class="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3.5 flex flex-wrap items-center justify-between gap-4">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl bg-gradient-to-br from-cyan-500 to-blue-600 flex items-center justify-center shadow-lg shadow-cyan-500/20">
+                    <i class="fa-solid fa-microchip text-white text-lg"></i>
+                </div>
+                <div>
+                    <div class="flex items-center gap-2">
+                        <h1 class="text-lg sm:text-xl font-bold text-white tracking-tight">OS Kernel Scheduler</h1>
+                        <span class="px-2 py-0.5 text-[11px] font-mono font-semibold bg-cyan-500/10 text-cyan-400 border border-cyan-500/30 rounded-full">POO / ES6+</span>
+                    </div>
+                    <p class="text-xs text-slate-400">Simulador Interativo de Gerenciamento de Processos & Escalonamento de CPU</p>
+                </div>
+            </div>
+
+            <!-- Navegação Principal (Abas) -->
+            <nav class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button onclick="ui.switchTab('simulator')" id="tab-btn-simulator" class="tab-btn px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-2 bg-cyan-600 text-white shadow-sm">
+                    <i class="fa-solid fa-play"></i>
+                    <span>Simulador Tempo Real</span>
+                </button>
+                <button onclick="ui.switchTab('comparison')" id="tab-btn-comparison" class="tab-btn px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-2 text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-scale-balanced"></i>
+                    <span>Comparação Lado a Lado</span>
+                </button>
+                <button onclick="ui.switchTab('oop')" id="tab-btn-oop" class="tab-btn px-3.5 py-2 rounded-lg text-xs sm:text-sm font-medium transition-all flex items-center gap-2 text-slate-400 hover:text-white">
+                    <i class="fa-solid fa-diagram-project"></i>
+                    <span>Arquitetura POO</span>
+                </button>
+            </nav>
+        </div>
+    </header>
+
+    <!-- Conteúdo Principal -->
+    <main class="flex-grow max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6">
+
+        <!-- =====================================================================
+             ABA 1: SIMULADOR EM TEMPO REAL
+        ====================================================================== -->
+        <div id="view-simulator" class="space-y-6">
+            
+            <!-- Grid Superior: Configuração de Processos (Esquerda) + Painel de Controle & Visualização CPU (Direita) -->
+            <div class="grid grid-cols-1 lg:grid-cols-12 gap-6">
+                
+                <!-- COLUNA ESQUERDA (5 cols): Gestão de Processos -->
+                <div class="lg:col-span-5 space-y-5">
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                        <div class="flex items-center justify-between mb-4">
+                            <h2 class="text-base font-semibold text-white flex items-center gap-2">
+                                <i class="fa-solid fa-layer-group text-cyan-400"></i>
+                                Fila de Carga de Trabalho
+                            </h2>
+                            <span id="process-count-badge" class="text-xs font-mono bg-slate-800 text-slate-300 px-2.5 py-1 rounded-lg border border-slate-700">4 processos</span>
+                        </div>
+
+                        <!-- Presets Rápidos -->
+                        <div class="mb-4">
+                            <label class="block text-[11px] font-semibold uppercase tracking-wider text-slate-400 mb-2">Cenários Predefinidos (Testes Rápidos)</label>
+                            <div class="grid grid-cols-2 gap-2">
+                                <button onclick="ui.loadPreset('standard')" class="px-3 py-2 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-xs font-medium text-slate-200 transition flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-sliders text-cyan-400"></i> Cenário Padrão
+                                </button>
+                                <button onclick="ui.loadPreset('convoy')" class="px-3 py-2 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-xs font-medium text-slate-200 transition flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-truck-moving text-amber-400"></i> Efeito Comboio
+                                </button>
+                                <button onclick="ui.loadPreset('priority')" class="px-3 py-2 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-xs font-medium text-slate-200 transition flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-ranking-star text-emerald-400"></i> Prioridades Mix
+                                </button>
+                                <button onclick="ui.loadPreset('random')" class="px-3 py-2 bg-slate-850 hover:bg-slate-800 border border-slate-700/80 rounded-xl text-xs font-medium text-slate-200 transition flex items-center justify-center gap-1.5">
+                                    <i class="fa-solid fa-dice text-purple-400"></i> Gerar Aleatórios
+                                </button>
+                            </div>
+                        </div>
+
+                        <!-- Formulário para Adicionar Novo Processo -->
+                        <form id="add-process-form" onsubmit="ui.handleAddProcess(event)" class="bg-slate-950/70 border border-slate-800/90 rounded-xl p-3.5 mb-4 space-y-3">
+                            <div class="text-xs font-semibold text-slate-300 flex items-center justify-between">
+                                <span><i class="fa-solid fa-plus-circle text-emerald-400 mr-1"></i> Adicionar Processo</span>
+                                <span class="text-[11px] text-slate-500">Prioridade 1 = Maior</span>
+                            </div>
+                            <div class="grid grid-cols-4 gap-2">
+                                <div>
+                                    <label class="block text-[10px] text-slate-400 mb-1">ID/Nome</label>
+                                    <input type="text" id="input-pid" maxlength="6" placeholder="P5" required
+                                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-400 mb-1">Chegada</label>
+                                    <input type="number" id="input-arrival" min="0" max="100" value="0" required
+                                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-400 mb-1">Burst (ms)</label>
+                                    <input type="number" id="input-burst" min="1" max="50" value="4" required
+                                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500">
+                                </div>
+                                <div>
+                                    <label class="block text-[10px] text-slate-400 mb-1">Prioridade</label>
+                                    <input type="number" id="input-priority" min="1" max="10" value="3" required
+                                        class="w-full bg-slate-900 border border-slate-700 rounded-lg px-2.5 py-1.5 text-xs font-mono text-white focus:outline-none focus:border-cyan-500">
+                                </div>
+                            </div>
+                            <button type="submit" class="w-full py-2 bg-emerald-600 hover:bg-emerald-500 text-white font-medium text-xs rounded-lg transition shadow-md shadow-emerald-900/30 flex items-center justify-center gap-1.5">
+                                <i class="fa-solid fa-plus"></i> Inserir na Tabela de Processos
+                            </button>
+                        </form>
+
+                        <!-- Tabela Editável/Removível de Processos -->
+                        <div class="overflow-x-auto max-h-64 border border-slate-800 rounded-xl">
+                            <table class="w-full text-left border-collapse">
+                                <thead class="bg-slate-950 text-[11px] uppercase text-slate-400 sticky top-0">
+                                    <tr>
+                                        <th class="py-2.5 px-3">Proc</th>
+                                        <th class="py-2.5 px-2 text-center">Chegada</th>
+                                        <th class="py-2.5 px-2 text-center">Burst</th>
+                                        <th class="py-2.5 px-2 text-center">Prior.</th>
+                                        <th class="py-2.5 px-3 text-right">Ação</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="process-list-tbody" class="divide-y divide-slate-800/70 text-xs font-mono">
+                                    <!-- Renderizado via JS -->
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- COLUNA DIREITA (7 cols): Motor de Simulação em Tempo Real -->
+                <div class="lg:col-span-7 space-y-5">
+                    
+                    <!-- Painel de Configuração do Escalonador & Controles -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                        <div class="grid grid-cols-1 sm:grid-cols-12 gap-4 items-end mb-5">
+                            <!-- Seleção de Algoritmo -->
+                            <div class="sm:col-span-7">
+                                <label for="algorithm-select" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                    <i class="fa-solid fa-code-branch text-cyan-400 mr-1"></i> Algoritmo de Escalonamento (Classe Scheduler)
+                                </label>
+                                <select id="algorithm-select" onchange="ui.handleAlgorithmChange()"
+                                    class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2.5 text-sm text-white font-medium focus:outline-none focus:border-cyan-500">
+                                    <option value="FCFS">FCFS — First-Come, First-Served (Não Preemptivo)</option>
+                                    <option value="SJF">SJF — Shortest Job First (Não Preemptivo)</option>
+                                    <option value="SRTF">SRTF — Shortest Remaining Time First (Preemptivo)</option>
+                                    <option value="PRIORITY_NP">Prioridade — Não Preemptivo (1 = Maior)</option>
+                                    <option value="PRIORITY_P">Prioridade — Preemptivo (1 = Maior)</option>
+                                    <option value="RR">Round Robin (RR) — Preemptivo por Quantum</option>
+                                </select>
+                            </div>
+
+                            <!-- Configuração de Quantum (Visível/Ativo para Round Robin) -->
+                            <div class="sm:col-span-5" id="quantum-control-box">
+                                <label for="quantum-input" class="block text-xs font-semibold text-slate-300 mb-1.5">
+                                    <i class="fa-solid fa-stopwatch text-amber-400 mr-1"></i> Quantum (ms)
+                                </label>
+                                <div class="flex items-center gap-2">
+                                    <input type="number" id="quantum-input" min="1" max="20" value="2" onchange="ui.handleAlgorithmChange()"
+                                        class="w-full bg-slate-950 border border-slate-700 rounded-xl px-3 py-2 text-sm font-mono text-white focus:outline-none focus:border-cyan-500 disabled:opacity-40">
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Descrição Didática do Algoritmo Ativo -->
+                        <div id="algorithm-description" class="bg-slate-950/80 border border-slate-800/80 rounded-xl p-3 mb-5 text-xs text-slate-300 flex items-start gap-2.5">
+                            <i class="fa-solid fa-circle-info text-cyan-400 mt-0.5"></i>
+                            <span id="algo-desc-text">Executa os processos rigorosamente na ordem de chegada (FIFO), como uma fila única de atendimento sem interrupções.</span>
+                        </div>
+
+                        <!-- Barra de Controles de Reprodução -->
+                        <div class="flex flex-wrap items-center justify-between gap-3 pt-3 border-t border-slate-800">
+                            <div class="flex items-center gap-2">
+                                <button id="btn-play-pause" onclick="ui.togglePlay()" class="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-cyan-600/20 flex items-center gap-2">
+                                    <i class="fa-solid fa-play" id="icon-play-pause"></i>
+                                    <span id="text-play-pause">Iniciar</span>
+                                </button>
+                                <button id="btn-step" onclick="ui.stepSimulation()" class="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs sm:text-sm rounded-xl border border-slate-700 transition flex items-center gap-1.5" title="Avançar 1 unidade de tempo (Tick)">
+                                    <i class="fa-solid fa-forward-step text-cyan-400"></i>
+                                    <span>+1 Tick</span>
+                                </button>
+                                <button onclick="ui.resetSimulation()" class="px-3.5 py-2.5 bg-slate-800 hover:bg-slate-700 text-slate-200 font-medium text-xs sm:text-sm rounded-xl border border-slate-700 transition flex items-center gap-1.5" title="Reiniciar Simulação">
+                                    <i class="fa-solid fa-rotate-left text-rose-400"></i>
+                                    <span>Reiniciar</span>
+                                </button>
+                            </div>
+
+                            <!-- Seletor de Velocidade -->
+                            <div class="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800">
+                                <span class="text-[11px] text-slate-400 px-2 font-medium">Velocidade:</span>
+                                <button onclick="ui.setSpeed(1)" id="speed-1" class="speed-btn px-2.5 py-1 rounded-lg text-xs font-mono font-semibold bg-slate-800 text-cyan-400">1x</button>
+                                <button onclick="ui.setSpeed(2)" id="speed-2" class="speed-btn px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white">2x</button>
+                                <button onclick="ui.setSpeed(5)" id="speed-5" class="speed-btn px-2.5 py-1 rounded-lg text-xs font-mono font-semibold text-slate-400 hover:text-white">5x</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Palco Visual em Tempo Real: Relógio, CPU e Filas (Analogia de Atendimento) -->
+                    <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl space-y-5">
+                        
+                        <!-- Cabeçalho do Palco: Relógio & Status Geral -->
+                        <div class="flex flex-wrap items-center justify-between gap-4 pb-4 border-b border-slate-800">
+                            <div class="flex items-center gap-3">
+                                <div class="bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 flex items-center gap-3">
+                                    <i class="fa-regular fa-clock text-cyan-400 text-lg"></i>
+                                    <div>
+                                        <div class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Relógio da CPU</div>
+                                        <div class="text-xl font-mono font-bold text-white"><span id="clock-display">0</span> <span class="text-xs font-normal text-slate-400">ticks (ms)</span></div>
+                                    </div>
+                                </div>
+                                <div id="sim-status-badge" class="px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700">
+                                    Pronto para iniciar
+                                </div>
+                            </div>
+
+                            <!-- Botão Relatório Final -->
+                            <button onclick="ui.openReportModal()" class="px-3.5 py-2 bg-emerald-600/20 hover:bg-emerald-600/30 text-emerald-300 border border-emerald-500/40 rounded-xl text-xs font-semibold transition flex items-center gap-2">
+                                <i class="fa-solid fa-file-contract"></i>
+                                <span>Gerar Relatório</span>
+                            </button>
+                        </div>
+
+                        <!-- Fluxo Visual: Futuros -> Fila de Prontos (Ready Queue) -> Núcleo CPU -> Finalizados -->
+                        <div class="grid grid-cols-1 md:grid-cols-12 gap-4 items-stretch">
+                            
+                            <!-- Fila de Prontos (Analogia: Fila de Espera para usar o Recurso) -->
+                            <div class="md:col-span-7 bg-slate-950/90 border border-slate-800 rounded-xl p-4 flex flex-col justify-between">
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <span class="text-xs font-bold uppercase tracking-wider text-cyan-400 flex items-center gap-1.5">
+                                            <i class="fa-solid fa-people-line"></i> Fila de Prontos (Ready Queue)
+                                        </span>
+                                        <span class="text-[10px] text-slate-400">Próximo à direita <i class="fa-solid fa-arrow-right ml-0.5"></i></span>
+                                    </div>
+                                    <p class="text-[11px] text-slate-500 mb-3">Analogia: Pessoas aguardando na fila ordenadas pelo critério do escalonador.</p>
+                                </div>
+
+                                <div id="ready-queue-container" class="min-h-[76px] bg-slate-900/70 border border-dashed border-slate-700 rounded-xl p-2.5 flex items-center justify-end gap-2 overflow-x-auto">
+                                    <span class="text-xs text-slate-500 italic w-full text-center">Fila vazia</span>
+                                </div>
+                            </div>
+
+                            <!-- Núcleo da CPU (Recurso Exclusivo em Execução) -->
+                            <div class="md:col-span-5 bg-slate-950/90 border border-slate-800 rounded-xl p-4 flex flex-col justify-between relative overflow-hidden">
+                                <div class="flex items-center justify-between mb-2">
+                                    <span class="text-xs font-bold uppercase tracking-wider text-emerald-400 flex items-center gap-1.5">
+                                        <i class="fa-solid fa-microchip"></i> CPU (Em Execução)
+                                    </span>
+                                    <span id="cpu-quantum-badge" class="hidden text-[10px] font-mono bg-amber-500/20 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded">Q: 0/2</span>
+                                </div>
+
+                                <div id="cpu-core-box" class="min-h-[76px] rounded-xl border border-slate-700 bg-slate-900 flex flex-col items-center justify-center p-3 transition-all">
+                                    <span class="text-xs font-mono text-slate-500">OCIOSA (IDLE)</span>
+                                </div>
+                            </div>
+                        </div>
+
+                        <!-- Processos Futuros vs Processos Concluídos -->
+                        <div class="grid grid-cols-1 sm:grid-cols-2 gap-4 text-xs">
+                            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3">
+                                <div class="text-[11px] font-semibold text-slate-400 mb-2 flex items-center justify-between">
+                                    <span><i class="fa-solid fa-hourglass-start text-slate-500 mr-1"></i> Ainda não chegaram</span>
+                                    <span id="future-count" class="font-mono text-slate-500">0</span>
+                                </div>
+                                <div id="future-processes-list" class="flex flex-wrap gap-1.5 min-h-[28px]">
+                                    <span class="text-slate-600 italic text-[11px]">Nenhum</span>
+                                </div>
+                            </div>
+
+                            <div class="bg-slate-950/60 border border-slate-800/80 rounded-xl p-3">
+                                <div class="text-[11px] font-semibold text-slate-400 mb-2 flex items-center justify-between">
+                                    <span><i class="fa-solid fa-circle-check text-emerald-500 mr-1"></i> Concluídos</span>
+                                    <span id="completed-count" class="font-mono text-emerald-400">0</span>
+                                </div>
+                                <div id="completed-processes-list" class="flex flex-wrap gap-1.5 min-h-[28px]">
+                                    <span class="text-slate-600 italic text-[11px]">Nenhum</span>
+                                </div>
+                            </div>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <!-- Diagrama de Gantt Dinâmico -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+                    <div>
+                        <h3 class="text-base font-semibold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-chart-gantt text-cyan-400"></i>
+                            Diagrama de Gantt (Linha do Tempo da CPU)
+                        </h3>
+                        <p class="text-xs text-slate-400">Histórico de ocupação da CPU construído tick a tick</p>
+                    </div>
+                    <div id="gantt-legend" class="flex flex-wrap items-center gap-3 text-xs">
+                        <!-- Legenda dinâmica de cores -->
+                    </div>
+                </div>
+
+                <div class="bg-slate-950 border border-slate-800 rounded-xl p-4 overflow-x-auto">
+                    <div id="gantt-chart-track" class="flex items-stretch min-h-[54px] min-w-full">
+                        <div class="w-full flex items-center justify-center text-xs text-slate-500 italic">
+                            Inicie a simulação para visualizar a linha do tempo de execução...
+                        </div>
+                    </div>
+                    <div id="gantt-timeline-axis" class="flex items-center min-w-full mt-1.5 text-[10px] font-mono text-slate-400">
+                        <!-- Marcadores de tempo -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Tabela de Métricas Detalhadas e KPIs -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <div class="flex flex-wrap items-center justify-between gap-4 mb-5">
+                    <div>
+                        <h3 class="text-base font-semibold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-gauge-high text-emerald-400"></i>
+                            Métricas de Desempenho em Tempo Real
+                        </h3>
+                        <p class="text-xs text-slate-400">Indicadores calculados dinamicamente pela classe <code class="text-cyan-400 font-mono">SimulationEngine</code></p>
+                    </div>
+
+                    <!-- Cards Resumo KPI -->
+                    <div class="grid grid-cols-2 sm:grid-cols-5 gap-2.5 w-full lg:w-auto">
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+                            <div class="text-[10px] text-slate-400 uppercase">Espera Média</div>
+                            <div id="kpi-avg-waiting" class="text-sm font-mono font-bold text-cyan-400">0.00 ms</div>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+                            <div class="text-[10px] text-slate-400 uppercase">Turnaround Médio</div>
+                            <div id="kpi-avg-turnaround" class="text-sm font-mono font-bold text-blue-400">0.00 ms</div>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+                            <div class="text-[10px] text-slate-400 uppercase">Resposta Média</div>
+                            <div id="kpi-avg-response" class="text-sm font-mono font-bold text-purple-400">0.00 ms</div>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2">
+                            <div class="text-[10px] text-slate-400 uppercase">Uso da CPU</div>
+                            <div id="kpi-cpu-util" class="text-sm font-mono font-bold text-emerald-400">0.0%</div>
+                        </div>
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl px-3 py-2 col-span-2 sm:col-span-1">
+                            <div class="text-[10px] text-slate-400 uppercase">Throughput</div>
+                            <div id="kpi-throughput" class="text-sm font-mono font-bold text-amber-400">0.00 p/ms</div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="overflow-x-auto border border-slate-800 rounded-xl">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-950 text-[11px] uppercase text-slate-400">
+                            <tr>
+                                <th class="py-3 px-4">Processo</th>
+                                <th class="py-3 px-3 text-center">Chegada (AT)</th>
+                                <th class="py-3 px-3 text-center">Burst (BT)</th>
+                                <th class="py-3 px-3 text-center">Prioridade</th>
+                                <th class="py-3 px-3 text-center">Estado</th>
+                                <th class="py-3 px-3 text-center">Término (CT)</th>
+                                <th class="py-3 px-3 text-center text-blue-400">Turnaround (TAT)</th>
+                                <th class="py-3 px-3 text-center text-cyan-400">Espera (WT)</th>
+                                <th class="py-3 px-3 text-center text-purple-400">Resposta (RT)</th>
+                            </tr>
+                        </thead>
+                        <tbody id="metrics-tbody" class="divide-y divide-slate-800/70 text-xs font-mono">
+                            <!-- Preenchido via JS -->
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- =====================================================================
+             ABA 2: COMPARAÇÃO LADO A LADO DE TODOS OS ALGORITMOS
+        ====================================================================== -->
+        <div id="view-comparison" class="hidden space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="flex flex-wrap items-center justify-between gap-4 mb-6">
+                    <div>
+                        <h2 class="text-lg font-bold text-white flex items-center gap-2">
+                            <i class="fa-solid fa-scale-balanced text-cyan-400"></i>
+                            Benchmark Comparativo Multi-Algoritmo
+                        </h2>
+                        <p class="text-xs text-slate-400 mt-1">
+                            Executa todos os 6 escalonadores simultaneamente sobre o mesmo conjunto de processos configurado na aba principal.
+                        </p>
+                    </div>
+                    <div class="flex items-center gap-3">
+                        <div class="flex items-center gap-2 bg-slate-950 border border-slate-800 px-3 py-2 rounded-xl">
+                            <span class="text-xs text-slate-400">Quantum RR:</span>
+                            <input type="number" id="comp-quantum-input" min="1" max="20" value="2" class="w-14 bg-slate-900 border border-slate-700 rounded px-2 py-1 text-xs font-mono text-white text-center">
+                        </div>
+                        <button onclick="ui.runComparison()" class="px-4 py-2.5 bg-cyan-600 hover:bg-cyan-500 text-white font-semibold text-xs sm:text-sm rounded-xl transition shadow-lg shadow-cyan-600/20 flex items-center gap-2">
+                            <i class="fa-solid fa-bolt"></i>
+                            <span>Executar Comparação Agora</span>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Insights Automáticos -->
+                <div id="comparison-insights" class="bg-gradient-to-r from-cyan-950/60 to-blue-950/60 border border-cyan-500/30 rounded-xl p-4 mb-6 text-xs text-cyan-100">
+                    <!-- Preenchido via JS -->
+                </div>
+
+                <!-- Tabela Comparativa de Métricas -->
+                <div class="overflow-x-auto border border-slate-800 rounded-xl mb-6">
+                    <table class="w-full text-left border-collapse">
+                        <thead class="bg-slate-950 text-[11px] uppercase text-slate-400">
+                            <tr>
+                                <th class="py-3 px-4">Algoritmo</th>
+                                <th class="py-3 px-3 text-center">Tipo</th>
+                                <th class="py-3 px-3 text-center text-cyan-400">Espera Média (WT)</th>
+                                <th class="py-3 px-3 text-center text-blue-400">Turnaround Médio (TAT)</th>
+                                <th class="py-3 px-3 text-center text-purple-400">Resposta Média (RT)</th>
+                                <th class="py-3 px-3 text-center text-emerald-400">Utilização CPU</th>
+                                <th class="py-3 px-3 text-center text-amber-400">Trocas Contexto</th>
+                            </tr>
+                        </thead>
+                        <tbody id="comparison-tbody" class="divide-y divide-slate-800 text-xs font-mono">
+                            <!-- Preenchido via JS -->
+                        </tbody>
+                    </table>
+                </div>
+
+                <!-- Gráfico de Barras Comparativo (Waiting Time vs Turnaround Time) -->
+                <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 mb-6">
+                    <h3 class="text-sm font-semibold text-white mb-1">Gráfico Comparativo: Tempo Médio de Espera vs. Turnaround</h3>
+                    <p class="text-xs text-slate-400 mb-4">Barras menores indicam maior eficiência na redução de atrasos para os processos.</p>
+                    <div id="comparison-bar-chart" class="space-y-4">
+                        <!-- Renderizado via JS -->
+                    </div>
+                </div>
+
+                <!-- Diagramas de Gantt Empilhados -->
+                <div>
+                    <h3 class="text-sm font-semibold text-white mb-3 flex items-center gap-2">
+                        <i class="fa-solid fa-bars-staggered text-cyan-400"></i>
+                        Diagramas de Gantt Empilhados (Comparação Visual da Ordem de Execução)
+                    </h3>
+                    <div id="comparison-gantt-stack" class="space-y-3">
+                        <!-- Renderizado via JS -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- =====================================================================
+             ABA 3: ARQUITETURA POO (DOCUMENTAÇÃO TÉCNICA & DIAGRAMAS)
+        ====================================================================== -->
+        <div id="view-oop" class="hidden space-y-6">
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-xl">
+                <div class="mb-6">
+                    <span class="px-2.5 py-1 text-[11px] font-mono bg-emerald-500/10 text-emerald-400 border border-emerald-500/30 rounded-full">Engenharia de Software & Sistemas Operacionais</span>
+                    <h2 class="text-xl font-bold text-white mt-2">Modelagem Orientada a Objetos (POO) do Simulador</h2>
+                    <p class="text-sm text-slate-400 mt-1">
+                        O núcleo deste simulador foi projetado aplicando os pilares de <strong>Encapsulamento, Herança, Polimorfismo e Abstração</strong> utilizando classes nativas ES6+.
+                    </p>
+                </div>
+
+                <!-- Diagrama de Classes Visual -->
+                <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+                    <!-- Classe Process -->
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+                            <span class="font-mono font-bold text-cyan-400 text-sm">class Process</span>
+                            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300">Entidade / PCB</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mb-3">Representa o Bloco de Controle de Processo (PCB) simulado, mantendo estado e métricas individuais.</p>
+                        <div class="text-[11px] font-mono space-y-1 text-slate-300">
+                            <div class="text-slate-500">// Atributos</div>
+                            <div>+ id, arrivalTime, burstTime</div>
+                            <div>+ remainingTime, priority</div>
+                            <div>+ state (NEW, READY, RUNNING...)</div>
+                            <div class="text-slate-500 pt-1">// Métodos</div>
+                            <div class="text-emerald-400">+ executeTick(currentTime)</div>
+                            <div class="text-emerald-400">+ calculateMetrics()</div>
+                            <div class="text-emerald-400">+ clone()</div>
+                        </div>
+                    </div>
+
+                    <!-- Classe Base Scheduler -->
+                    <div class="bg-slate-950 border border-cyan-500/40 rounded-xl p-4 shadow-lg shadow-cyan-950/20">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+                            <span class="font-mono font-bold text-amber-400 text-sm">abstract class Scheduler</span>
+                            <span class="text-[10px] bg-amber-500/10 text-amber-300 border border-amber-500/30 px-2 py-0.5 rounded">Classe Base</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mb-3">Define a interface polimórfica para seleção de processos e controle de preempção.</p>
+                        <div class="text-[11px] font-mono space-y-1 text-slate-300">
+                            <div class="text-slate-500">// Atributos</div>
+                            <div>+ name, isPreemptive, quantum</div>
+                            <div class="text-slate-500 pt-1">// Métodos Polimórficos</div>
+                            <div class="text-cyan-400">+ selectNextProcess(readyQueue)</div>
+                            <div class="text-cyan-400">+ shouldPreempt(current, queue, qUsed)</div>
+                            <div class="text-cyan-400">+ sortQueue(readyQueue)</div>
+                        </div>
+                    </div>
+
+                    <!-- Classe SimulationEngine -->
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                        <div class="flex items-center justify-between border-b border-slate-800 pb-2 mb-3">
+                            <span class="font-mono font-bold text-purple-400 text-sm">class SimulationEngine</span>
+                            <span class="text-[10px] bg-slate-800 px-2 py-0.5 rounded text-slate-300">Orquestrador</span>
+                        </div>
+                        <p class="text-xs text-slate-400 mb-3">Controla o relógio discreto (ticks), admissão na fila de prontos, preempção e coleta de métricas.</p>
+                        <div class="text-[11px] font-mono space-y-1 text-slate-300">
+                            <div class="text-slate-500">// Atributos</div>
+                            <div>+ currentTime, processes[]</div>
+                            <div>+ readyQueue[], ganttHistory[]</div>
+                            <div>+ contextSwitches, idleTime</div>
+                            <div class="text-slate-500 pt-1">// Métodos</div>
+                            <div class="text-emerald-400">+ step() // Avança 1 tick</div>
+                            <div class="text-emerald-400">+ runToCompletion()</div>
+                            <div class="text-emerald-400">+ getSummaryMetrics()</div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Subclasses Especializadas -->
+                <div class="bg-slate-950 border border-slate-800 rounded-xl p-4">
+                    <h3 class="text-sm font-semibold text-white mb-3">Hierarquia de Herança (Subclasses de <code class="text-amber-400 font-mono">Scheduler</code>)</h3>
+                    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3 text-xs">
+                        <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                            <div class="font-mono font-bold text-cyan-400 mb-1">FCFSScheduler</div>
+                            <p class="text-slate-400 text-[11px]">Ordena por <code class="text-slate-200">arrivalTime</code>. Não preemptivo (<code class="text-slate-200">shouldPreempt() = false</code>).</p>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                            <div class="font-mono font-bold text-cyan-400 mb-1">SJFScheduler / SRTFScheduler</div>
+                            <p class="text-slate-400 text-[11px]">Ordena pelo menor <code class="text-slate-200">remainingTime</code>. SRTF sobrescreve <code class="text-slate-200">shouldPreempt()</code> para interromper se chegar job mais curto.</p>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                            <div class="font-mono font-bold text-cyan-400 mb-1">PriorityScheduler</div>
+                            <p class="text-slate-400 text-[11px]">Ordena por <code class="text-slate-200">priority</code> (1 = maior). Suporta modo Preemptivo ou Não Preemptivo via construtor.</p>
+                        </div>
+                        <div class="bg-slate-900 border border-slate-800 p-3 rounded-lg">
+                            <div class="font-mono font-bold text-cyan-400 mb-1">RoundRobinScheduler</div>
+                            <p class="text-slate-400 text-[11px]">Fila circular FIFO com preempção por tempo quando <code class="text-slate-200">quantumCounter >= quantum</code>.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </main>
+
+    <!-- =====================================================================
+         MODAL DE RELATÓRIO FINAL DA SIMULAÇÃO
+    ====================================================================== -->
+    <div id="report-modal" class="fixed inset-0 z-50 hidden bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4">
+        <div class="bg-slate-900 border border-slate-700 rounded-2xl max-w-3xl w-full max-h-[90vh] flex flex-col shadow-2xl">
+            <div class="flex items-center justify-between px-6 py-4 border-b border-slate-800">
+                <h3 class="text-base font-bold text-white flex items-center gap-2">
+                    <i class="fa-solid fa-file-lines text-emerald-400"></i>
+                    Relatório Técnico de Execução da Simulação
+                </h3>
+                <button onclick="ui.closeReportModal()" class="text-slate-400 hover:text-white p-1">
+                    <i class="fa-solid fa-xmark text-lg"></i>
+                </button>
+            </div>
+            
+            <div class="p-6 overflow-y-auto space-y-4">
+                <pre id="report-text-content" class="bg-slate-950 border border-slate-800 rounded-xl p-4 text-xs font-mono text-slate-200 whitespace-pre-wrap leading-relaxed"></pre>
+            </div>
+
+            <div class="px-6 py-4 border-t border-slate-800 flex flex-wrap items-center justify-end gap-3 bg-slate-900/50 rounded-b-2xl">
+                <button onclick="ui.copyReport()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl border border-slate-700 transition flex items-center gap-2">
+                    <i class="fa-regular fa-copy"></i> Copiar Texto
+                </button>
+                <button onclick="ui.downloadReport()" class="px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-semibold rounded-xl transition flex items-center gap-2">
+                    <i class="fa-solid fa-download"></i> Baixar Relatório (.txt)
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Rodapé -->
+    <footer class="border-t border-slate-800/80 py-4 text-center text-xs text-slate-500">
+        Simulador de Escalonamento de CPU • Modelagem Orientada a Objetos (ES6+ Classes) • Sistemas Operacionais
+    </footer>
+
+    <!-- =====================================================================
+         LÓGICA DO SISTEMA: ARQUITETURA ORIENTADA A OBJETOS (ES6+ CLASSES)
+    ====================================================================== -->
+    <script>
+        /**
+         * Paleta de cores distintas e harmônicas para identificação visual dos processos
+         */
+        const PROCESS_COLORS = [
+            { bg: 'bg-cyan-500', border: 'border-cyan-400', text: 'text-cyan-950', hex: '#06b6d4', badge: 'bg-cyan-500/20 text-cyan-300 border-cyan-500/40' },
+            { bg: 'bg-emerald-500', border: 'border-emerald-400', text: 'text-emerald-950', hex: '#10b981', badge: 'bg-emerald-500/20 text-emerald-300 border-emerald-500/40' },
+            { bg: 'bg-amber-500', border: 'border-amber-400', text: 'text-amber-950', hex: '#f59e0b', badge: 'bg-amber-500/20 text-amber-300 border-amber-500/40' },
+            { bg: 'bg-purple-500', border: 'border-purple-400', text: 'text-white', hex: '#a855f7', badge: 'bg-purple-500/20 text-purple-300 border-purple-500/40' },
+            { bg: 'bg-rose-500', border: 'border-rose-400', text: 'text-white', hex: '#f43f5e', badge: 'bg-rose-500/20 text-rose-300 border-rose-500/40' },
+            { bg: 'bg-blue-500', border: 'border-blue-400', text: 'text-white', hex: '#3b82f6', badge: 'bg-blue-500/20 text-blue-300 border-blue-500/40' },
+            { bg: 'bg-teal-400', border: 'border-teal-300', text: 'text-teal-950', hex: '#2dd4bf', badge: 'bg-teal-500/20 text-teal-300 border-teal-500/40' },
+            { bg: 'bg-orange-500', border: 'border-orange-400', text: 'text-white', hex: '#f97316', badge: 'bg-orange-500/20 text-orange-300 border-orange-500/40' }
+        ];
+
+        /**
+         * =========================================================================
+         * 1. CLASSE PROCESS (Representação do Process Control Block - PCB)
+         * =========================================================================
+         */
+        class Process {
+            constructor(id, arrivalTime, burstTime, priority = 1, colorIndex = 0) {
+                this.id = id;
+                this.arrivalTime = Number(arrivalTime);
+                this.burstTime = Number(burstTime);
+                this.priority = Number(priority);
+                this.colorIndex = colorIndex;
+
+                // Atributos dinâmicos de execução
+                this.remainingTime = this.burstTime;
+                this.state = 'NEW'; // NEW, READY, RUNNING, COMPLETED
+                this.startTime = null;
+                this.completionTime = null;
+                this.waitingTime = 0;
+                this.turnaroundTime = 0;
+                this.responseTime = null;
+            }
+
+            /**
+             * Executa 1 unidade de tempo (tick) deste processo na CPU
+             */
+            executeTick(currentTime) {
+                if (this.startTime === null) {
+                    this.startTime = currentTime;
+                    this.responseTime = this.startTime - this.arrivalTime;
+                }
+                this.state = 'RUNNING';
+                this.remainingTime = Math.max(0, this.remainingTime - 1);
+
+                if (this.remainingTime === 0) {
+                    this.state = 'COMPLETED';
+                    this.completionTime = currentTime + 1;
+                    this.calculateMetrics();
+                }
+            }
+
+            /**
+             * Calcula métricas finais após término
+             */
+            calculateMetrics() {
+                if (this.completionTime !== null) {
+                    this.turnaroundTime = this.completionTime - this.arrivalTime;
+                    this.waitingTime = Math.max(0, this.turnaroundTime - this.burstTime);
+                }
+            }
+
+            /**
+             * Atualiza tempo de espera parcial enquanto estiver na fila de prontos
+             */
+            incrementWaitingTime() {
+                if (this.state === 'READY') {
+                    this.waitingTime++;
+                }
+            }
+
+            /**
+             * Retorna o objeto de estilo visual correspondente ao índice de cor
+             */
+            getColor() {
+                return PROCESS_COLORS[this.colorIndex % PROCESS_COLORS.length];
+            }
+
+            /**
+             * Clona o processo para simulações paralelas (Comparação Lado a Lado)
+             */
+            clone() {
+                return new Process(this.id, this.arrivalTime, this.burstTime, this.priority, this.colorIndex);
+            }
+        }
+
+        /**
+         * =========================================================================
+         * 2. CLASSE BASE SCHEDULER (Abstração e Polimorfismo)
+         * =========================================================================
+         */
+        class Scheduler {
+            constructor(name, shortName, isPreemptive = false, description = '') {
+                if (new.target === Scheduler) {
+                    throw new Error("A classe abstrata 'Scheduler' não pode ser instanciada diretamente.");
+                }
+                this.name = name;
+                this.shortName = shortName;
+                this.isPreemptive = isPreemptive;
+                this.description = description;
+            }
+
+            /**
+             * Ordena a fila de prontos conforme a política do algoritmo
+             */
+            sortQueue(readyQueue) {
+                return readyQueue;
+            }
+
+            /**
+             * Seleciona e remove o próximo processo da fila de prontos
+             */
+            selectNextProcess(readyQueue) {
+                if (readyQueue.length === 0) return null;
+                this.sortQueue(readyQueue);
+                return readyQueue.shift();
+            }
+
+            /**
+             * Decide se o processo atualmente na CPU deve sofrer preempção
+             */
+            shouldPreempt(currentProcess, readyQueue, quantumUsed) {
+                return false;
+            }
+        }
+
+        /**
+         * Subclasse: First-Come, First-Served (FCFS)
+         */
+        class FCFSScheduler extends Scheduler {
+            constructor() {
+                super(
+                    'FCFS (First-Come, First-Served)',
+                    'FCFS',
+                    false,
+                    'Executa os processos rigorosamente na ordem de chegada (FIFO). Simples, porém sujeito ao Efeito Comboio quando um processo longo bloqueia processos curtos.'
+                );
+            }
+
+            sortQueue(readyQueue) {
+                // Mantém ordem de chegada (desempate por ID)
+                return readyQueue.sort((a, b) => a.arrivalTime - b.arrivalTime);
+            }
+        }
+
+        /**
+         * Subclasse: Shortest Job First (SJF - Não Preemptivo)
+         */
+        class SJFScheduler extends Scheduler {
+            constructor() {
+                super(
+                    'SJF (Shortest Job First)',
+                    'SJF',
+                    false,
+                    'Escolhe o processo pronto com o menor tempo total de execução (Burst Time). Minimiza o tempo médio de espera, mas não interrompe processos em curso.'
+                );
+            }
+
+            sortQueue(readyQueue) {
+                return readyQueue.sort((a, b) => {
+                    if (a.burstTime !== b.burstTime) return a.burstTime - b.burstTime;
+                    return a.arrivalTime - b.arrivalTime;
+                });
+            }
+        }
+
+        /**
+         * Subclasse: Shortest Remaining Time First (SRTF - Preemptivo)
+         */
+        class SRTFScheduler extends Scheduler {
+            constructor() {
+                super(
+                    'SRTF (Shortest Remaining Time First)',
+                    'SRTF',
+                    true,
+                    'Versão preemptiva do SJF. Se chegar um processo com tempo restante menor que o processo atual na CPU, ocorre preempção imediata.'
+                );
+            }
+
+            sortQueue(readyQueue) {
+                return readyQueue.sort((a, b) => {
+                    if (a.remainingTime !== b.remainingTime) return a.remainingTime - b.remainingTime;
+                    return a.arrivalTime - b.arrivalTime;
+                });
+            }
+
+            shouldPreempt(currentProcess, readyQueue) {
+                if (!currentProcess || readyQueue.length === 0) return false;
+                this.sortQueue(readyQueue);
+                return readyQueue[0].remainingTime < currentProcess.remainingTime;
+            }
+        }
+
+        /**
+         * Subclasse: Priority Scheduling (Preemptivo e Não Preemptivo)
+         */
+        class PriorityScheduler extends Scheduler {
+            constructor(isPreemptive = false) {
+                super(
+                    isPreemptive ? 'Prioridade (Preemptivo)' : 'Prioridade (Não Preemptivo)',
+                    isPreemptive ? 'Prioridade (P)' : 'Prioridade (NP)',
+                    isPreemptive,
+                    isPreemptive
+                        ? 'Aloca a CPU ao processo de maior prioridade (menor número: 1 = máxima). Interrompe imediatamente se chegar um processo mais prioritário.'
+                        : 'Aloca a CPU ao processo de maior prioridade (1 = máxima) na fila de prontos e o executa até o fim sem interrupção.'
+                );
+            }
+
+            sortQueue(readyQueue) {
+                return readyQueue.sort((a, b) => {
+                    if (a.priority !== b.priority) return a.priority - b.priority;
+                    return a.arrivalTime - b.arrivalTime;
+                });
+            }
+
+            shouldPreempt(currentProcess, readyQueue) {
+                if (!this.isPreemptive || !currentProcess || readyQueue.length === 0) return false;
+                this.sortQueue(readyQueue);
+                return readyQueue[0].priority < currentProcess.priority;
+            }
+        }
+
+        /**
+         * Subclasse: Round Robin (RR)
+         */
+        class RoundRobinScheduler extends Scheduler {
+            constructor(quantum = 2) {
+                super(
+                    `Round Robin (Quantum = ${quantum}ms)`,
+                    `RR (Q=${quantum})`,
+                    true,
+                    `Distribui a CPU de forma justa em fatias de tempo (Quantum = ${quantum}ms). Ao expirar o quantum, o processo retorna ao fim da fila circular.`
+                );
+                this.quantum = Math.max(1, Number(quantum));
+            }
+
+            sortQueue(readyQueue) {
+                // Fila circular FIFO: não reordena por burst/prioridade, preserva ordem de entrada na fila
+                return readyQueue;
+            }
+
+            shouldPreempt(currentProcess, readyQueue, quantumUsed) {
+                if (!currentProcess) return false;
+                // Sofre preempção se atingiu o quantum (mesmo se a fila estiver vazia, reinicia fatia, ou cede se houver outro)
+                return quantumUsed >= this.quantum && readyQueue.length > 0;
+            }
+        }
+
+        /**
+         * =========================================================================
+         * 3. CLASSE SIMULATION ENGINE (Motor Discreto de Simulação)
+         * =========================================================================
+         */
+        class SimulationEngine {
+            constructor(processes, scheduler) {
+                this.processes = processes.map(p => p.clone());
+                this.scheduler = scheduler;
+                this.currentTime = 0;
+                this.readyQueue = [];
+                this.runningProcess = null;
+                this.quantumCounter = 0;
+                this.ganttHistory = []; // Array de { time, processId, colorIndex }
+                this.contextSwitches = 0;
+                this.idleTicks = 0;
+                this.isFinished = false;
+            }
+
+            /**
+             * Avança a simulação em exatamente 1 tick (unidade de tempo)
+             */
+            step() {
+                if (this.isFinished) return false;
+
+                // 1. Admitir processos que chegaram neste exato tick
+                const newlyArrived = this.processes.filter(
+                    p => p.state === 'NEW' && p.arrivalTime <= this.currentTime
+                );
+                newlyArrived.forEach(p => {
+                    p.state = 'READY';
+                    this.readyQueue.push(p);
+                });
+
+                // 2. Verificar preempção caso exista um processo na CPU
+                if (this.runningProcess) {
+                    if (this.scheduler.shouldPreempt(this.runningProcess, this.readyQueue, this.quantumCounter)) {
+                        this.runningProcess.state = 'READY';
+                        this.readyQueue.push(this.runningProcess);
+                        this.runningProcess = null;
+                        this.quantumCounter = 0;
+                        this.contextSwitches++;
+                    }
+                }
+
+                // 3. Se a CPU está livre, escalonar o próximo processo da fila de prontos
+                if (!this.runningProcess && this.readyQueue.length > 0) {
+                    const nextProc = this.scheduler.selectNextProcess(this.readyQueue);
+                    if (nextProc) {
+                        // Conta troca de contexto se já houve execução anterior
+                        if (this.ganttHistory.length > 0 && this.ganttHistory[this.ganttHistory.length - 1].processId !== nextProc.id) {
+                            this.contextSwitches++;
+                        }
+                        this.runningProcess = nextProc;
+                        this.runningProcess.state = 'RUNNING';
+                        this.quantumCounter = 0;
+                    }
+                }
+
+                // 4. Ordenar visualmente a fila de prontos para exibição coerente com o algoritmo
+                this.scheduler.sortQueue(this.readyQueue);
+
+                // 5. Incrementar tempo de espera dos processos que permaneceram na fila de prontos
+                this.readyQueue.forEach(p => p.incrementWaitingTime());
+
+                // 6. Executar 1 tick na CPU (ou registrar ociosidade)
+                if (this.runningProcess) {
+                    this.ganttHistory.push({
+                        time: this.currentTime,
+                        processId: this.runningProcess.id,
+                        colorIndex: this.runningProcess.colorIndex
+                    });
+
+                    this.runningProcess.executeTick(this.currentTime);
+                    this.quantumCounter++;
+
+                    // Se concluiu neste tick, libera a CPU
+                    if (this.runningProcess.state === 'COMPLETED') {
+                        this.runningProcess = null;
+                        this.quantumCounter = 0;
+                    } else if (this.scheduler instanceof RoundRobinScheduler && this.quantumCounter >= this.scheduler.quantum && this.readyQueue.length === 0) {
+                        // Se RR expirou quantum mas não há ninguém na fila, apenas renova fatia
+                        this.quantumCounter = 0;
+                    }
+                } else {
+                    this.idleTicks++;
+                    this.ganttHistory.push({
+                        time: this.currentTime,
+                        processId: 'IDLE',
+                        colorIndex: -1
+                    });
+                }
+
+                // 7. Avançar relógio
+                this.currentTime++;
+
+                // 8. Verificar se todos os processos finalizaram
+                if (this.processes.length > 0 && this.processes.every(p => p.state === 'COMPLETED')) {
+                    this.isFinished = true;
+                }
+
+                return !this.isFinished;
+            }
+
+            /**
+             * Executa a simulação completa instantaneamente (usado na Comparação Lado a Lado)
+             */
+            runToCompletion() {
+                let safetyGuard = 0;
+                while (!this.isFinished && safetyGuard < 10000) {
+                    this.step();
+                    safetyGuard++;
+                }
+                return this.getSummaryMetrics();
+            }
+
+            /**
+             * Retorna métricas consolidadas da simulação atual
+             */
+            getSummaryMetrics() {
+                const total = this.processes.length;
+                if (total === 0) {
+                    return { avgWaiting: 0, avgTurnaround: 0, avgResponse: 0, cpuUtilization: 0, throughput: 0, contextSwitches: 0 };
+                }
+
+                const completedProcs = this.processes.filter(p => p.state === 'COMPLETED');
+                const activeProcs = this.processes.filter(p => p.state !== 'NEW');
+
+                const sumWaiting = activeProcs.reduce((acc, p) => acc + p.waitingTime, 0);
+                const denomWaiting = activeProcs.length || 1;
+
+                const sumTurnaround = completedProcs.reduce((acc, p) => acc + p.turnaroundTime, 0);
+                const startedProcs = this.processes.filter(p => p.responseTime !== null);
+                const sumResponse = startedProcs.reduce((acc, p) => acc + p.responseTime, 0);
+
+                const busyTicks = Math.max(0, this.currentTime - this.idleTicks);
+                const cpuUtilization = this.currentTime > 0 ? (busyTicks / this.currentTime) * 100 : 0;
+                const throughput = this.currentTime > 0 ? completedProcs.length / this.currentTime : 0;
+
+                return {
+                    avgWaiting: sumWaiting / denomWaiting,
+                    avgTurnaround: completedProcs.length > 0 ? sumTurnaround / completedProcs.length : 0,
+                    avgResponse: startedProcs.length > 0 ? sumResponse / startedProcs.length : 0,
+                    cpuUtilization,
+                    throughput,
+                    contextSwitches: this.contextSwitches
+                };
+            }
+        }
+
+        /**
+         * =========================================================================
+         * 4. CONTROLADOR DE INTERFACE E INTERATIVIDADE (UI Controller)
+         * =========================================================================
+         */
+        class UIController {
+            constructor() {
+                this.baseProcesses = [];
+                this.engine = null;
+                this.timerId = null;
+                this.isPlaying = false;
+                this.speedMultiplier = 1;
+                this.nextPidCounter = 1;
+
+                this.init();
+            }
+
+            init() {
+                this.loadPreset('standard');
+            }
+
+            /**
+             * Exibe notificação toast não bloqueante
+             */
+            showToast(message, type = 'info') {
+                const container = document.getElementById('toast-container');
+                const toast = document.createElement('div');
+                const colors = {
+                    info: 'bg-slate-800 border-cyan-500/50 text-cyan-200',
+                    success: 'bg-slate-800 border-emerald-500/50 text-emerald-200',
+                    warning: 'bg-slate-800 border-amber-500/50 text-amber-200',
+                    error: 'bg-slate-800 border-rose-500/50 text-rose-200'
+                };
+                toast.className = `pointer-events-auto px-4 py-2.5 rounded-xl border shadow-xl text-xs font-medium flex items-center gap-2 transition-all transform translate-y-2 opacity-0 ${colors[type] || colors.info}`;
+                toast.innerHTML = `<i class="fa-solid fa-circle-info"></i> <span>${message}</span>`;
+                container.appendChild(toast);
+
+                requestAnimationFrame(() => {
+                    toast.classList.remove('translate-y-2', 'opacity-0');
+                });
+
+                setTimeout(() => {
+                    toast.classList.add('opacity-0', 'translate-y-2');
+                    setTimeout(() => toast.remove(), 300);
+                }, 2800);
+            }
+
+            /**
+             * Alterna entre as abas principais
+             */
+            switchTab(tabName) {
+                ['simulator', 'comparison', 'oop'].forEach(t => {
+                    document.getElementById(`view-${t}`).classList.add('hidden');
+                    const btn = document.getElementById(`tab-btn-${t}`);
+                    btn.classList.remove('bg-cyan-600', 'text-white', 'shadow-sm');
+                    btn.classList.add('text-slate-400');
+                });
+
+                document.getElementById(`view-${tabName}`).classList.remove('hidden');
+                const activeBtn = document.getElementById(`tab-btn-${tabName}`);
+                activeBtn.classList.add('bg-cyan-600', 'text-white', 'shadow-sm');
+                activeBtn.classList.remove('text-slate-400');
+
+                if (tabName === 'comparison') {
+                    this.pauseSimulation();
+                    document.getElementById('comp-quantum-input').value = document.getElementById('quantum-input').value;
+                    this.runComparison();
+                }
+            }
+
+            /**
+             * Carrega cenários predefinidos de teste
+             */
+            loadPreset(presetType) {
+                this.pauseSimulation();
+                this.baseProcesses = [];
+
+                if (presetType === 'standard') {
+                    this.baseProcesses = [
+                        new Process('P1', 0, 6, 3, 0),
+                        new Process('P2', 1, 3, 1, 1),
+                        new Process('P3', 2, 8, 4, 2),
+                        new Process('P4', 4, 2, 2, 3)
+                    ];
+                } else if (presetType === 'convoy') {
+                    // Processo muito longo chega primeiro, seguido por vários curtos
+                    this.baseProcesses = [
+                        new Process('P1', 0, 12, 3, 0),
+                        new Process('P2', 1, 2, 2, 1),
+                        new Process('P3', 2, 1, 1, 2),
+                        new Process('P4', 3, 2, 2, 3)
+                    ];
+                } else if (presetType === 'priority') {
+                    this.baseProcesses = [
+                        new Process('P1', 0, 5, 4, 0),
+                        new Process('P2', 1, 4, 2, 1),
+                        new Process('P3', 2, 6, 1, 2),
+                        new Process('P4', 3, 3, 3, 3),
+                        new Process('P5', 5, 2, 1, 4)
+                    ];
+                } else if (presetType === 'random') {
+                    const count = Math.floor(Math.random() * 3) + 4; // 4 a 6 processos
+                    for (let i = 0; i < count; i++) {
+                        const arrival = i === 0 ? 0 : Math.floor(Math.random() * 8);
+                        const burst = Math.floor(Math.random() * 8) + 2;
+                        const priority = Math.floor(Math.random() * 5) + 1;
+                        this.baseProcesses.push(new Process(`P${i + 1}`, arrival, burst, priority, i));
+                    }
+                }
+
+                this.nextPidCounter = this.baseProcesses.length + 1;
+                document.getElementById('input-pid').value = `P${this.nextPidCounter}`;
+                this.renderProcessTable();
+                this.resetSimulation();
+            }
+
+            /**
+             * Adiciona um processo personalizado via formulário
+             */
+            handleAddProcess(event) {
+                event.preventDefault();
+                if (this.baseProcesses.length >= 12) {
+                    this.showToast('Limite máximo de 12 processos atingido para melhor visualização.', 'warning');
+                    return;
+                }
+
+                const idInput = document.getElementById('input-pid');
+                const arrival = parseInt(document.getElementById('input-arrival').value, 10);
+                const burst = parseInt(document.getElementById('input-burst').value, 10);
+                const priority = parseInt(document.getElementById('input-priority').value, 10);
+
+                let pid = idInput.value.trim().toUpperCase() || `P${this.nextPidCounter}`;
+                if (this.baseProcesses.some(p => p.id === pid)) {
+                    pid = `${pid}_${this.nextPidCounter}`;
+                }
+
+                const colorIndex = this.baseProcesses.length;
+                this.baseProcesses.push(new Process(pid, arrival, burst, priority, colorIndex));
+                this.nextPidCounter++;
+                idInput.value = `P${this.nextPidCounter}`;
+
+                this.renderProcessTable();
+                this.resetSimulation();
+                this.showToast(`Processo ${pid} adicionado à carga de trabalho.`, 'success');
+            }
+
+            /**
+             * Atualiza valores editados diretamente na tabela
+             */
+            updateProcessField(index, field, value) {
+                const numVal = parseInt(value, 10);
+                if (isNaN(numVal)) return;
+                if (field === 'arrivalTime' && numVal >= 0) this.baseProcesses[index].arrivalTime = numVal;
+                if (field === 'burstTime' && numVal >= 1) this.baseProcesses[index].burstTime = numVal;
+                if (field === 'priority' && numVal >= 1 && numVal <= 10) this.baseProcesses[index].priority = numVal;
+                this.resetSimulation();
+            }
+
+            /**
+             * Remove um processo da lista
+             */
+            removeProcess(index) {
+                if (this.baseProcesses.length <= 1) {
+                    this.showToast('Mantenha pelo menos 1 processo na lista.', 'warning');
+                    return;
+                }
+                const removed = this.baseProcesses.splice(index, 1)[0];
+                this.renderProcessTable();
+                this.resetSimulation();
+                this.showToast(`Processo ${removed.id} removido.`, 'info');
+            }
+
+            /**
+             * Renderiza a tabela editável de processos configurados
+             */
+            renderProcessTable() {
+                const tbody = document.getElementById('process-list-tbody');
+                document.getElementById('process-count-badge').textContent = `${this.baseProcesses.length} processo${this.baseProcesses.length !== 1 ? 's' : ''}`;
+
+                tbody.innerHTML = this.baseProcesses.map((p, idx) => {
+                    const color = p.getColor();
+                    return `
+                        <tr class="hover:bg-slate-850/60 transition-colors">
+                            <td class="py-2 px-3 font-bold">
+                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border ${color.badge}">
+                                    <span class="w-2 h-2 rounded-full ${color.bg}"></span>
+                                    ${p.id}
+                                </span>
+                            </td>
+                            <td class="py-1.5 px-2 text-center">
+                                <input type="number" min="0" max="100" value="${p.arrivalTime}"
+                                    onchange="ui.updateProcessField(${idx}, 'arrivalTime', this.value)"
+                                    class="w-12 bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-center text-slate-200 focus:border-cyan-500 focus:outline-none">
+                            </td>
+                            <td class="py-1.5 px-2 text-center">
+                                <input type="number" min="1" max="50" value="${p.burstTime}"
+                                    onchange="ui.updateProcessField(${idx}, 'burstTime', this.value)"
+                                    class="w-12 bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-center text-slate-200 focus:border-cyan-500 focus:outline-none">
+                            </td>
+                            <td class="py-1.5 px-2 text-center">
+                                <input type="number" min="1" max="10" value="${p.priority}"
+                                    onchange="ui.updateProcessField(${idx}, 'priority', this.value)"
+                                    class="w-12 bg-slate-950 border border-slate-800 rounded px-1.5 py-1 text-center text-slate-200 focus:border-cyan-500 focus:outline-none">
+                            </td>
+                            <td class="py-2 px-3 text-right">
+                                <button onclick="ui.removeProcess(${idx})" class="text-slate-500 hover:text-rose-400 transition p-1" title="Remover processo">
+                                    <i class="fa-solid fa-trash-can"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            /**
+             * Instancia a subclasse Scheduler escolhida
+             */
+            createSchedulerInstance(algoKey, quantumOverride = null) {
+                const quantum = quantumOverride !== null
+                    ? quantumOverride
+                    : parseInt(document.getElementById('quantum-input').value, 10) || 2;
+
+                switch (algoKey) {
+                    case 'FCFS': return new FCFSScheduler();
+                    case 'SJF': return new SJFScheduler();
+                    case 'SRTF': return new SRTFScheduler();
+                    case 'PRIORITY_NP': return new PriorityScheduler(false);
+                    case 'PRIORITY_P': return new PriorityScheduler(true);
+                    case 'RR': return new RoundRobinScheduler(quantum);
+                    default: return new FCFSScheduler();
+                }
+            }
+
+            /**
+             * Trata alteração de algoritmo ou quantum
+             */
+            handleAlgorithmChange() {
+                const algoKey = document.getElementById('algorithm-select').value;
+                const quantumInput = document.getElementById('quantum-input');
+                quantumInput.disabled = (algoKey !== 'RR');
+                this.resetSimulation();
+            }
+
+            /**
+             * Reinicia o motor de simulação para o estado inicial (Tick 0)
+             */
+            resetSimulation() {
+                this.pauseSimulation();
+                const algoKey = document.getElementById('algorithm-select').value;
+                const quantumInput = document.getElementById('quantum-input');
+                quantumInput.disabled = (algoKey !== 'RR');
+
+                const scheduler = this.createSchedulerInstance(algoKey);
+                document.getElementById('algo-desc-text').textContent = scheduler.description;
+
+                this.engine = new SimulationEngine(this.baseProcesses, scheduler);
+                this.updateSimulationUI();
+            }
+
+            /**
+             * Inicia ou pausa o loop automático de simulação
+             */
+            togglePlay() {
+                if (this.engine.isFinished) {
+                    this.resetSimulation();
+                }
+                if (this.isPlaying) {
+                    this.pauseSimulation();
+                } else {
+                    this.startSimulation();
+                }
+            }
+
+            startSimulation() {
+                if (this.isPlaying) return;
+                this.isPlaying = true;
+                document.getElementById('icon-play-pause').className = 'fa-solid fa-pause';
+                document.getElementById('text-play-pause').textContent = 'Pausar';
+
+                const intervalMs = Math.max(120, Math.round(900 / this.speedMultiplier));
+                this.timerId = setInterval(() => {
+                    const hasMore = this.engine.step();
+                    this.updateSimulationUI();
+                    if (!hasMore) {
+                        this.pauseSimulation();
+                        this.showToast('Simulação concluída com sucesso!', 'success');
+                    }
+                }, intervalMs);
+            }
+
+            pauseSimulation() {
+                this.isPlaying = false;
+                if (this.timerId) {
+                    clearInterval(this.timerId);
+                    this.timerId = null;
+                }
+                document.getElementById('icon-play-pause').className = 'fa-solid fa-play';
+                document.getElementById('text-play-pause').textContent = this.engine && this.engine.isFinished ? 'Reiniciar' : 'Iniciar';
+            }
+
+            /**
+             * Executa manualmente 1 tick (Passo a Passo)
+             */
+            stepSimulation() {
+                this.pauseSimulation();
+                if (this.engine.isFinished) {
+                    this.showToast('A simulação já foi finalizada. Clique em Reiniciar.', 'info');
+                    return;
+                }
+                const hasMore = this.engine.step();
+                this.updateSimulationUI();
+                if (!hasMore) {
+                    this.showToast('Todos os processos foram concluídos!', 'success');
+                }
+            }
+
+            /**
+             * Altera a velocidade de execução
+             */
+            setSpeed(mult) {
+                this.speedMultiplier = mult;
+                [1, 2, 5].forEach(s => {
+                    const btn = document.getElementById(`speed-${s}`);
+                    if (s === mult) {
+                        btn.classList.add('bg-slate-800', 'text-cyan-400');
+                        btn.classList.remove('text-slate-400');
+                    } else {
+                        btn.classList.remove('bg-slate-800', 'text-cyan-400');
+                        btn.classList.add('text-slate-400');
+                    }
+                });
+
+                if (this.isPlaying) {
+                    this.pauseSimulation();
+                    this.startSimulation();
+                }
+            }
+
+            /**
+             * Atualiza todos os elementos visuais em tempo real
+             */
+            updateSimulationUI() {
+                const eng = this.engine;
+
+                // 1. Relógio e Status
+                document.getElementById('clock-display').textContent = eng.currentTime;
+                const statusBadge = document.getElementById('sim-status-badge');
+                if (eng.isFinished) {
+                    statusBadge.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold bg-emerald-500/20 text-emerald-300 border border-emerald-500/40';
+                    statusBadge.innerHTML = '<i class="fa-solid fa-check-circle mr-1"></i> Concluído';
+                } else if (this.isPlaying) {
+                    statusBadge.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold bg-cyan-500/20 text-cyan-300 border border-cyan-500/40';
+                    statusBadge.innerHTML = '<i class="fa-solid fa-spinner fa-spin mr-1"></i> Executando';
+                } else if (eng.currentTime > 0) {
+                    statusBadge.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold bg-amber-500/20 text-amber-300 border border-amber-500/40';
+                    statusBadge.innerHTML = '<i class="fa-solid fa-pause mr-1"></i> Pausado';
+                } else {
+                    statusBadge.className = 'px-3 py-1.5 rounded-xl text-xs font-semibold bg-slate-800 text-slate-300 border border-slate-700';
+                    statusBadge.textContent = 'Pronto para iniciar';
+                }
+
+                // 2. Núcleo da CPU
+                const cpuBox = document.getElementById('cpu-core-box');
+                const quantumBadge = document.getElementById('cpu-quantum-badge');
+
+                if (eng.scheduler instanceof RoundRobinScheduler) {
+                    quantumBadge.classList.remove('hidden');
+                    quantumBadge.textContent = `Quantum: ${eng.quantumCounter}/${eng.scheduler.quantum}`;
+                } else {
+                    quantumBadge.classList.add('hidden');
+                }
+
+                if (eng.runningProcess) {
+                    const p = eng.runningProcess;
+                    const color = p.getColor();
+                    const executed = p.burstTime - p.remainingTime;
+                    const pct = Math.round((executed / p.burstTime) * 100);
+
+                    cpuBox.className = `min-h-[76px] rounded-xl border-2 ${color.border} bg-slate-900 flex flex-col items-center justify-center p-3 cpu-active-pulse shadow-lg`;
+                    cpuBox.innerHTML = `
+                        <div class="flex items-center gap-2 mb-1.5">
+                            <span class="px-2.5 py-0.5 rounded-md font-mono font-bold text-sm ${color.bg} ${color.text}">${p.id}</span>
+                            <span class="text-xs font-mono text-slate-300">Restante: <strong>${p.remainingTime}ms</strong></span>
+                        </div>
+                        <div class="w-full bg-slate-800 h-2 rounded-full overflow-hidden">
+                            <div class="${color.bg} h-full transition-all duration-200" style="width: ${pct}%"></div>
+                        </div>
+                    `;
+                } else {
+                    cpuBox.className = 'min-h-[76px] rounded-xl border border-slate-700 bg-slate-900 flex flex-col items-center justify-center p-3';
+                    cpuBox.innerHTML = `<span class="text-xs font-mono text-slate-500">${eng.isFinished ? 'FINALIZADO' : 'OCIOSA (IDLE)'}</span>`;
+                }
+
+                // 3. Fila de Prontos (Ready Queue - Cabeça da fila fica à direita, mais próxima da CPU)
+                const queueContainer = document.getElementById('ready-queue-container');
+                if (eng.readyQueue.length === 0) {
+                    queueContainer.innerHTML = `<span class="text-xs text-slate-500 italic w-full text-center">Nenhum processo aguardando na fila</span>`;
+                } else {
+                    // Inverte visualmente para que index 0 (próximo a entrar na CPU) fique à direita
+                    const visualOrder = [...eng.readyQueue].reverse();
+                    queueContainer.innerHTML = visualOrder.map((p, idx) => {
+                        const color = p.getColor();
+                        const isHead = (idx === visualOrder.length - 1);
+                        return `
+                            <div class="flex-shrink-0 px-3 py-2 rounded-xl border ${isHead ? 'border-cyan-400 ring-2 ring-cyan-500/30' : 'border-slate-700'} bg-slate-850 flex flex-col items-center min-w-[68px]">
+                                <div class="flex items-center gap-1">
+                                    <span class="w-2 h-2 rounded-full ${color.bg}"></span>
+                                    <span class="font-mono font-bold text-xs text-white">${p.id}</span>
+                                </div>
+                                <span class="text-[10px] font-mono text-slate-400 mt-0.5">Rem: ${p.remainingTime}m</span>
+                                <span class="text-[9px] font-mono text-slate-500">Prio: ${p.priority}</span>
+                            </div>
+                        `;
+                    }).join('');
+                }
+
+                // 4. Futuros e Concluídos
+                const futureProcs = eng.processes.filter(p => p.state === 'NEW');
+                const completedProcs = eng.processes.filter(p => p.state === 'COMPLETED');
+
+                document.getElementById('future-count').textContent = futureProcs.length;
+                document.getElementById('future-processes-list').innerHTML = futureProcs.length === 0
+                    ? `<span class="text-slate-600 italic text-[11px]">Todos já chegaram</span>`
+                    : futureProcs.map(p => `<span class="px-2 py-0.5 rounded bg-slate-900 border border-slate-700 font-mono text-[11px] text-slate-300">${p.id} <span class="text-slate-500">(t=${p.arrivalTime})</span></span>`).join('');
+
+                document.getElementById('completed-count').textContent = completedProcs.length;
+                document.getElementById('completed-processes-list').innerHTML = completedProcs.length === 0
+                    ? `<span class="text-slate-600 italic text-[11px]">Nenhum ainda</span>`
+                    : completedProcs.map(p => {
+                        const color = p.getColor();
+                        return `<span class="px-2 py-0.5 rounded border ${color.badge} font-mono text-[11px] font-semibold">${p.id} ✓</span>`;
+                    }).join('');
+
+                // 5. Diagrama de Gantt Dinâmico
+                this.renderGanttChart();
+
+                // 6. Métricas e Tabela Detalhada
+                this.renderMetricsTable();
+            }
+
+            /**
+             * Renderiza o Diagrama de Gantt Dinâmico e Legenda
+             */
+            renderGanttChart() {
+                const legendEl = document.getElementById('gantt-legend');
+                legendEl.innerHTML = this.engine.processes.map(p => {
+                    const color = p.getColor();
+                    return `<span class="inline-flex items-center gap-1.5 text-slate-300 font-mono">
+                        <span class="w-2.5 h-2.5 rounded-sm ${color.bg}"></span>${p.id}
+                    </span>`;
+                }).join('') + `<span class="inline-flex items-center gap-1.5 text-slate-500 font-mono"><span class="w-2.5 h-2.5 rounded-sm bg-slate-800 border border-slate-700"></span>Idle</span>`;
+
+                const trackEl = document.getElementById('gantt-chart-track');
+                const axisEl = document.getElementById('gantt-timeline-axis');
+                const history = this.engine.ganttHistory;
+
+                if (history.length === 0) {
+                    trackEl.innerHTML = `<div class="w-full flex items-center justify-center text-xs text-slate-500 italic">Inicie a simulação para visualizar a linha do tempo de execução...</div>`;
+                    axisEl.innerHTML = '';
+                    return;
+                }
+
+                // Agrupa ticks consecutivos do mesmo processo para blocos limpos
+                const blocks = [];
+                history.forEach(item => {
+                    const last = blocks[blocks.length - 1];
+                    if (last && last.processId === item.processId) {
+                        last.duration++;
+                        last.end = item.time + 1;
+                    } else {
+                        blocks.push({
+                            processId: item.processId,
+                            colorIndex: item.colorIndex,
+                            start: item.time,
+                            end: item.time + 1,
+                            duration: 1
+                        });
+                    }
+                });
+
+                const totalTicks = history.length;
+
+                trackEl.innerHTML = blocks.map(b => {
+                    const widthPct = (b.duration / totalTicks) * 100;
+                    if (b.processId === 'IDLE') {
+                        return `<div style="width: ${widthPct}%; min-width: 28px;" class="gantt-block bg-slate-900/90 border-r border-slate-800 flex flex-col items-center justify-center text-[10px] font-mono text-slate-500" title="Ociosa (${b.start}ms - ${b.end}ms)">
+                            <span>IDLE</span>
+                        </div>`;
+                    }
+                    const color = PROCESS_COLORS[b.colorIndex % PROCESS_COLORS.length];
+                    return `<div style="width: ${widthPct}%; min-width: 34px;" class="gantt-block ${color.bg} ${color.text} border-r border-slate-950/40 flex flex-col items-center justify-center py-1.5 font-mono font-bold text-xs shadow-inner" title="${b.processId}: ${b.start}ms → ${b.end}ms (${b.duration}ms)">
+                        <span>${b.processId}</span>
+                        <span class="text-[9px] opacity-80 font-normal">${b.duration}m</span>
+                    </div>`;
+                }).join('');
+
+                // Eixo numérico abaixo dos blocos
+                axisEl.innerHTML = blocks.map((b, i) => {
+                    const widthPct = (b.duration / totalTicks) * 100;
+                    return `<div style="width: ${widthPct}%; min-width: ${b.processId === 'IDLE' ? '28px' : '34px'};" class="flex justify-between pr-0.5">
+                        <span>${b.start}</span>
+                        ${i === blocks.length - 1 ? `<span>${b.end}</span>` : ''}
+                    </div>`;
+                }).join('');
+            }
+
+            /**
+             * Renderiza KPIs e Tabela de Métricas por Processo
+             */
+            renderMetricsTable() {
+                const metrics = this.engine.getSummaryMetrics();
+                document.getElementById('kpi-avg-waiting').textContent = `${metrics.avgWaiting.toFixed(2)} ms`;
+                document.getElementById('kpi-avg-turnaround').textContent = `${metrics.avgTurnaround.toFixed(2)} ms`;
+                document.getElementById('kpi-avg-response').textContent = `${metrics.avgResponse.toFixed(2)} ms`;
+                document.getElementById('kpi-cpu-util').textContent = `${metrics.cpuUtilization.toFixed(1)}%`;
+                document.getElementById('kpi-throughput').textContent = `${metrics.throughput.toFixed(3)} p/ms`;
+
+                const stateLabels = {
+                    NEW: '<span class="px-2 py-0.5 rounded bg-slate-800 text-slate-400">Futuro</span>',
+                    READY: '<span class="px-2 py-0.5 rounded bg-amber-500/20 text-amber-300">Pronto</span>',
+                    RUNNING: '<span class="px-2 py-0.5 rounded bg-cyan-500/20 text-cyan-300">Executando</span>',
+                    COMPLETED: '<span class="px-2 py-0.5 rounded bg-emerald-500/20 text-emerald-300">Concluído</span>'
+                };
+
+                const tbody = document.getElementById('metrics-tbody');
+                tbody.innerHTML = this.engine.processes.map(p => {
+                    const color = p.getColor();
+                    return `
+                        <tr class="hover:bg-slate-850/50 transition-colors">
+                            <td class="py-2.5 px-4 font-bold">
+                                <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded border ${color.badge}">
+                                    <span class="w-2 h-2 rounded-full ${color.bg}"></span>${p.id}
+                                </span>
+                            </td>
+                            <td class="py-2.5 px-3 text-center text-slate-300">${p.arrivalTime}</td>
+                            <td class="py-2.5 px-3 text-center text-slate-300">${p.burstTime}</td>
+                            <td class="py-2.5 px-3 text-center text-slate-300">${p.priority}</td>
+                            <td class="py-2.5 px-3 text-center">${stateLabels[p.state]}</td>
+                            <td class="py-2.5 px-3 text-center text-slate-300">${p.completionTime !== null ? p.completionTime : '-'}</td>
+                            <td class="py-2.5 px-3 text-center font-semibold text-blue-400">${p.state === 'COMPLETED' ? p.turnaroundTime : '-'}</td>
+                            <td class="py-2.5 px-3 text-center font-semibold text-cyan-400">${p.state !== 'NEW' ? p.waitingTime : '-'}</td>
+                            <td class="py-2.5 px-3 text-center font-semibold text-purple-400">${p.responseTime !== null ? p.responseTime : '-'}</td>
+                        </tr>
+                    `;
+                }).join('');
+            }
+
+            /**
+             * =====================================================================
+             * MODO COMPARAÇÃO LADO A LADO DE TODOS OS ALGORITMOS
+             * =====================================================================
+             */
+            runComparison() {
+                const quantum = parseInt(document.getElementById('comp-quantum-input').value, 10) || 2;
+                const configs = [
+                    { key: 'FCFS', scheduler: new FCFSScheduler(), type: 'Não Preemptivo' },
+                    { key: 'SJF', scheduler: new SJFScheduler(), type: 'Não Preemptivo' },
+                    { key: 'SRTF', scheduler: new SRTFScheduler(), type: 'Preemptivo' },
+                    { key: 'PRIORITY_NP', scheduler: new PriorityScheduler(false), type: 'Não Preemptivo' },
+                    { key: 'PRIORITY_P', scheduler: new PriorityScheduler(true), type: 'Preemptivo' },
+                    { key: 'RR', scheduler: new RoundRobinScheduler(quantum), type: 'Preemptivo (Quantum)' }
+                ];
+
+                const results = configs.map(cfg => {
+                    const sim = new SimulationEngine(this.baseProcesses, cfg.scheduler);
+                    const summary = sim.runToCompletion();
+                    return {
+                        ...cfg,
+                        engine: sim,
+                        summary
+                    };
+                });
+
+                // 1. Insights Automáticos
+                const bestWaiting = [...results].sort((a, b) => a.summary.avgWaiting - b.summary.avgWaiting)[0];
+                const bestTurnaround = [...results].sort((a, b) => a.summary.avgTurnaround - b.summary.avgTurnaround)[0];
+                const bestResponse = [...results].sort((a, b) => a.summary.avgResponse - b.summary.avgResponse)[0];
+
+                document.getElementById('comparison-insights').innerHTML = `
+                    <div class="flex items-start gap-3">
+                        <i class="fa-solid fa-lightbulb text-amber-400 text-lg mt-0.5"></i>
+                        <div class="space-y-1">
+                            <div class="font-bold text-sm text-white">Análise Automática do Cenário (${this.baseProcesses.length} processos):</div>
+                            <p>• <strong>Menor Tempo Médio de Espera:</strong> <span class="text-cyan-300 font-semibold">${bestWaiting.scheduler.name}</span> com <strong>${bestWaiting.summary.avgWaiting.toFixed(2)} ms</strong>.</p>
+                            <p>• <strong>Menor Turnaround Médio:</strong> <span class="text-blue-300 font-semibold">${bestTurnaround.scheduler.name}</span> com <strong>${bestTurnaround.summary.avgTurnaround.toFixed(2)} ms</strong>.</p>
+                            <p>• <strong>Melhor Tempo de Resposta Inicial:</strong> <span class="text-purple-300 font-semibold">${bestResponse.scheduler.name}</span> com <strong>${bestResponse.summary.avgResponse.toFixed(2)} ms</strong>.</p>
+                        </div>
+                    </div>
+                `;
+
+                // 2. Tabela Comparativa
+                const compTbody = document.getElementById('comparison-tbody');
+                compTbody.innerHTML = results.map(r => {
+                    const isBestWT = r.key === bestWaiting.key;
+                    return `
+                        <tr class="hover:bg-slate-850/60 transition-colors">
+                            <td class="py-3 px-4 font-sans font-semibold text-white">
+                                ${r.scheduler.name}
+                                ${isBestWT ? '<span class="ml-2 px-1.5 py-0.5 text-[10px] bg-emerald-500/20 text-emerald-300 border border-emerald-500/40 rounded">Menor Espera</span>' : ''}
+                            </td>
+                            <td class="py-3 px-3 text-center text-slate-400">${r.type}</td>
+                            <td class="py-3 px-3 text-center font-bold text-cyan-400">${r.summary.avgWaiting.toFixed(2)} ms</td>
+                            <td class="py-3 px-3 text-center font-bold text-blue-400">${r.summary.avgTurnaround.toFixed(2)} ms</td>
+                            <td class="py-3 px-3 text-center font-bold text-purple-400">${r.summary.avgResponse.toFixed(2)} ms</td>
+                            <td class="py-3 px-3 text-center text-emerald-400">${r.summary.cpuUtilization.toFixed(1)}%</td>
+                            <td class="py-3 px-3 text-center text-amber-400">${r.summary.contextSwitches}</td>
+                        </tr>
+                    `;
+                }).join('');
+
+                // 3. Gráfico de Barras Horizontal (Waiting Time vs Turnaround Time)
+                const maxVal = Math.max(...results.map(r => r.summary.avgTurnaround), 1);
+                const chartContainer = document.getElementById('comparison-bar-chart');
+                chartContainer.innerHTML = results.map(r => {
+                    const wtPct = (r.summary.avgWaiting / maxVal) * 100;
+                    const tatPct = (r.summary.avgTurnaround / maxVal) * 100;
+                    return `
+                        <div class="space-y-1.5">
+                            <div class="flex justify-between text-xs">
+                                <span class="font-semibold text-slate-200">${r.scheduler.shortName}</span>
+                                <span class="font-mono text-slate-400">Espera: <strong class="text-cyan-400">${r.summary.avgWaiting.toFixed(2)}ms</strong> | Turnaround: <strong class="text-blue-400">${r.summary.avgTurnaround.toFixed(2)}ms</strong></span>
+                            </div>
+                            <div class="space-y-1">
+                                <div class="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden">
+                                    <div class="bg-cyan-500 h-full rounded-full transition-all duration-500" style="width: ${wtPct}%"></div>
+                                </div>
+                                <div class="w-full bg-slate-900 rounded-full h-2.5 overflow-hidden">
+                                    <div class="bg-blue-500 h-full rounded-full transition-all duration-500" style="width: ${tatPct}%"></div>
+                                </div>
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+
+                // 4. Diagramas de Gantt Empilhados
+                const maxTotalTime = Math.max(...results.map(r => r.engine.ganttHistory.length), 1);
+                const ganttStack = document.getElementById('comparison-gantt-stack');
+                ganttStack.innerHTML = results.map(r => {
+                    const blocks = [];
+                    r.engine.ganttHistory.forEach(item => {
+                        const last = blocks[blocks.length - 1];
+                        if (last && last.processId === item.processId) {
+                            last.duration++;
+                        } else {
+                            blocks.push({ processId: item.processId, colorIndex: item.colorIndex, duration: 1 });
+                        }
+                    });
+
+                    const barsHtml = blocks.map(b => {
+                        const widthPct = (b.duration / maxTotalTime) * 100;
+                        if (b.processId === 'IDLE') {
+                            return `<div style="width: ${widthPct}%" class="bg-slate-800 text-slate-500 text-[10px] font-mono flex items-center justify-center border-r border-slate-950">IDLE</div>`;
+                        }
+                        const color = PROCESS_COLORS[b.colorIndex % PROCESS_COLORS.length];
+                        return `<div style="width: ${widthPct}%" class="${color.bg} ${color.text} text-[11px] font-mono font-bold flex items-center justify-center border-r border-slate-950/30" title="${b.processId} (${b.duration}ms)">${b.processId}</div>`;
+                    }).join('');
+
+                    return `
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl p-3">
+                            <div class="flex justify-between items-center mb-1.5 text-xs">
+                                <span class="font-semibold text-slate-200">${r.scheduler.name}</span>
+                                <span class="font-mono text-[11px] text-slate-400">Tempo Total: ${r.engine.currentTime} ms</span>
+                            </div>
+                            <div class="w-full h-7 bg-slate-900 rounded-lg overflow-hidden flex">
+                                ${barsHtml}
+                            </div>
+                        </div>
+                    `;
+                }).join('');
+            }
+
+            /**
+             * =====================================================================
+             * GERAÇÃO E EXPORTAÇÃO DE RELATÓRIO TÉCNICO
+             * =====================================================================
+             */
+            generateReportText() {
+                // Garante que temos os dados completos da simulação atual (clonando para não alterar estado visual se estiver no meio)
+                const simClone = new SimulationEngine(this.baseProcesses, this.engine.scheduler);
+                const summary = simClone.runToCompletion();
+
+                const lines = [];
+                lines.push('========================================================================');
+                lines.push('       RELATÓRIO DE SIMULAÇÃO - GERENCIAMENTO DE PROCESSOS (CPU)        ');
+                lines.push('========================================================================');
+                lines.push(`Data/Hora: ${new Date().toLocaleString('pt-BR')}`);
+                lines.push(`Algoritmo Selecionado: ${simClone.scheduler.name}`);
+                lines.push(`Preemptivo: ${simClone.scheduler.isPreemptive ? 'Sim' : 'Não'}`);
+                lines.push(`Total de Processos: ${simClone.processes.length}`);
+                lines.push(`Tempo Total de Simulação: ${simClone.currentTime} ms`);
+                lines.push(`Trocas de Contexto: ${summary.contextSwitches}`);
+                lines.push('');
+                lines.push('------------------------------------------------------------------------');
+                lines.push('1. RESULTADOS DETALHADOS POR PROCESSO');
+                lines.push('------------------------------------------------------------------------');
+                lines.push('ID     | Chegada | Burst | Prior. | Término | Turnaround | Espera | Resp.');
+                lines.push('-------+---------+-------+--------+---------+------------+--------+------');
+
+                simClone.processes.forEach(p => {
+                    lines.push(
+                        `${p.id.padEnd(6)} | ${String(p.arrivalTime).padStart(7)} | ${String(p.burstTime).padStart(5)} | ${String(p.priority).padStart(6)} | ${String(p.completionTime).padStart(7)} | ${String(p.turnaroundTime).padStart(10)} | ${String(p.waitingTime).padStart(6)} | ${String(p.responseTime).padStart(5)}`
+                    );
+                });
+
+                lines.push('');
+                lines.push('------------------------------------------------------------------------');
+                lines.push('2. MÉTRICAS GERAIS DE DESEMPENHO');
+                lines.push('------------------------------------------------------------------------');
+                lines.push(`• Tempo Médio de Espera (Waiting Time)     : ${summary.avgWaiting.toFixed(2)} ms`);
+                lines.push(`• Tempo Médio de Retorno (Turnaround Time) : ${summary.avgTurnaround.toFixed(2)} ms`);
+                lines.push(`• Tempo Médio de Resposta (Response Time)  : ${summary.avgResponse.toFixed(2)} ms`);
+                lines.push(`• Utilização da CPU                        : ${summary.cpuUtilization.toFixed(2)}%`);
+                lines.push(`• Vazão (Throughput)                       : ${summary.throughput.toFixed(4)} processos/ms`);
+                lines.push('');
+                lines.push('------------------------------------------------------------------------');
+                lines.push('3. ANÁLISE COMPARATIVA RÁPIDA (TODOS OS ALGORITMOS NESTE CENÁRIO)');
+                lines.push('------------------------------------------------------------------------');
+
+                const quantum = parseInt(document.getElementById('quantum-input').value, 10) || 2;
+                const allAlgos = [
+                    new FCFSScheduler(),
+                    new SJFScheduler(),
+                    new SRTFScheduler(),
+                    new PriorityScheduler(false),
+                    new PriorityScheduler(true),
+                    new RoundRobinScheduler(quantum)
+                ];
+
+                let bestAlgo = null;
+                let minWait = Infinity;
+
+                allAlgos.forEach(alg => {
+                    const s = new SimulationEngine(this.baseProcesses, alg);
+                    const m = s.runToCompletion();
+                    if (m.avgWaiting < minWait) {
+                        minWait = m.avgWaiting;
+                        bestAlgo = alg.name;
+                    }
+                    lines.push(`• ${alg.name.padEnd(36)} -> Espera: ${m.avgWaiting.toFixed(2)}ms | TAT: ${m.avgTurnaround.toFixed(2)}ms`);
+                });
+
+                lines.push('');
+                lines.push(`>> INSIGHT AUTOMÁTICO: Para este conjunto de processos, o algoritmo`);
+                lines.push(`   "${bestAlgo}" obteve o menor tempo médio de espera (${minWait.toFixed(2)} ms).`);
+                lines.push('========================================================================');
+
+                return lines.join('\n');
+            }
+
+            openReportModal() {
+                const text = this.generateReportText();
+                document.getElementById('report-text-content').textContent = text;
+                document.getElementById('report-modal').classList.remove('hidden');
+            }
+
+            closeReportModal() {
+                document.getElementById('report-modal').classList.add('hidden');
+            }
+
+            copyReport() {
+                const textarea = document.createElement('textarea');
+                textarea.value = document.getElementById('report-text-content').textContent;
+                document.body.appendChild(textarea);
+                textarea.select();
+                document.execCommand('copy');
+                document.body.removeChild(textarea);
+                this.showToast('Relatório copiado para a área de transferência!', 'success');
+            }
+
+            downloadReport() {
+                const text = document.getElementById('report-text-content').textContent;
+                const blob = new Blob([text], { type: 'text/plain;charset=utf-8' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `relatorio_escalonamento_cpu_${Date.now()}.txt`;
+                a.click();
+                URL.revokeObjectURL(url);
+                this.showToast('Download do relatório iniciado!', 'success');
+            }
+        }
+
+        // Inicializa o controlador global após carregamento da página
+        let ui;
+        window.onload = () => {
+            ui = new UIController();
+        };
+    </script>
+</body>
+</html>
